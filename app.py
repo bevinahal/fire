@@ -7,7 +7,12 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="HUGS Monte Carlo Simulator", layout="wide")
 
 class DynamicHUGSSimulation:
-    def __init__(self, df_data, n_sims=1000, years=40, equity_shift_pct=0.01):
+    def __init__(self, df_data, n_sims=1000, years=40, equity_shift_pct=0.01,
+                 start_essential=1_800_000, start_discretionary=600_000, start_travel=600_000,
+                 mu_inf_ess=0.06, vol_inf_ess=0.025, 
+                 mu_inf_disc=0.06, vol_inf_disc=0.025, 
+                 mu_inf_trv=0.05, vol_inf_trv=0.01):
+        
         self.n_sims = n_sims
         self.years = years
         self.shift_pct = equity_shift_pct
@@ -32,15 +37,15 @@ class DynamicHUGSSimulation:
         
         self.initial_corpus = np.sum(self.amounts)
         
-        # Starting Expenses (Absolute values)
-        self.start_essential = 1_800_000
-        self.start_discretionary = 600_000
-        self.start_travel = 600_000
+        # Expenses (Absolute values)
+        self.start_essential = start_essential
+        self.start_discretionary = start_discretionary
+        self.start_travel = start_travel
         
         # Macroeconomic Inflation Assumptions
-        self.mu_inf_ess, self.vol_inf_ess = 0.06, 0.025
-        self.mu_inf_disc, self.vol_inf_disc = 0.06, 0.025
-        self.mu_inf_trv, self.vol_inf_trv = 0.05, 0.01
+        self.mu_inf_ess, self.vol_inf_ess = mu_inf_ess, vol_inf_ess
+        self.mu_inf_disc, self.vol_inf_disc = mu_inf_disc, vol_inf_disc
+        self.mu_inf_trv, self.vol_inf_trv = mu_inf_trv, vol_inf_trv
 
         # Track history for plotting
         self.real_corpus_history = np.zeros((self.years, self.n_sims))
@@ -140,10 +145,8 @@ class DynamicHUGSSimulation:
                 eq_add = actual_shift / len(self.eq_idx)
                 asset_values[:, self.eq_idx] += eq_add[:, None]
 
-            # Record real corpus history
             self.real_corpus_history[y, :] = np.sum(asset_values, axis=1) / cumulative_inflation
 
-        # Summary Metrics
         results = {
             "survival_rate": np.mean(survival),
             "med_terminal_corpus_real": np.median(self.real_corpus_history[-1, survival]),
@@ -162,6 +165,26 @@ st.sidebar.header("Simulation Settings")
 n_sims = st.sidebar.number_input("Number of Simulations", min_value=100, max_value=20000, value=5000, step=500)
 years = st.sidebar.slider("Retirement Horizon (Years)", 10, 60, 40)
 equity_shift_pct = st.sidebar.slider("Annual Debt-to-Equity Shift (%)", 0.0, 5.0, 1.0, 0.1) / 100.0
+
+# Expenses Inputs
+with st.sidebar.expander("Initial Expenses (Lakhs ₹)", expanded=True):
+    ess_lakhs = st.number_input("Essential Lifestyle", value=18.0, step=0.5)
+    disc_lakhs = st.number_input("Discretionary Lifestyle", value=6.0, step=0.5)
+    trv_lakhs = st.number_input("Travel", value=6.0, step=0.5)
+
+# Inflation Inputs
+with st.sidebar.expander("Inflation Assumptions (%)", expanded=False):
+    st.markdown("**Essential**")
+    mu_inf_ess = st.number_input("Mean (Ess)", value=6.0, step=0.5) / 100.0
+    vol_inf_ess = st.number_input("Volatility (Ess)", value=2.5, step=0.1) / 100.0
+    
+    st.markdown("**Discretionary**")
+    mu_inf_disc = st.number_input("Mean (Disc)", value=6.0, step=0.5) / 100.0
+    vol_inf_disc = st.number_input("Volatility (Disc)", value=2.5, step=0.1) / 100.0
+    
+    st.markdown("**Travel**")
+    mu_inf_trv = st.number_input("Mean (Trv)", value=5.0, step=0.5) / 100.0
+    vol_inf_trv = st.number_input("Volatility (Trv)", value=1.0, step=0.1) / 100.0
 
 # Main Area Inputs
 st.subheader("Portfolio Configuration")
@@ -184,13 +207,26 @@ edited_df = st.data_editor(
 
 if st.button("Run Monte Carlo Simulation", type="primary"):
     with st.spinner('Running quantitative paths...'):
-        sim = DynamicHUGSSimulation(edited_df, n_sims=n_sims, years=years, equity_shift_pct=equity_shift_pct)
+        
+        # Convert inputs to class parameters
+        sim = DynamicHUGSSimulation(
+            df_data=edited_df, 
+            n_sims=n_sims, 
+            years=years, 
+            equity_shift_pct=equity_shift_pct,
+            start_essential=ess_lakhs * 100_000,
+            start_discretionary=disc_lakhs * 100_000,
+            start_travel=trv_lakhs * 100_000,
+            mu_inf_ess=mu_inf_ess, vol_inf_ess=vol_inf_ess,
+            mu_inf_disc=mu_inf_disc, vol_inf_disc=vol_inf_disc,
+            mu_inf_trv=mu_inf_trv, vol_inf_trv=vol_inf_trv
+        )
+        
         results = sim.run()
         
         st.divider()
         st.subheader("Simulation Outcomes")
         
-        # Convert terminal corpus back to Crores for clean display
         terminal_cr = results['med_terminal_corpus_real'] / 10_000_000
         
         col1, col2, col3 = st.columns(3)
@@ -200,7 +236,6 @@ if st.button("Run Monte Carlo Simulation", type="primary"):
         
         st.subheader("Real Portfolio Trajectories (Inflation-Adjusted)")
         
-        # Scale the history arrays down to Crores for the Y-axis
         history_cr = results['history'] / 10_000_000
         x_years = np.arange(1, years + 1)
         
