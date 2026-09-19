@@ -2,38 +2,24 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import io
-import csv
 
 # Set wide layout for better dashboard viewing
 st.set_page_config(page_title="HUGS Monte Carlo Simulator", layout="wide")
 
 class DynamicHUGSSimulation:
-    def __init__(self, csv_data, n_sims=1000, years=40, equity_shift_pct=0.01):
+    def __init__(self, df_data, n_sims=1000, years=40, equity_shift_pct=0.01):
         self.n_sims = n_sims
         self.years = years
         self.shift_pct = equity_shift_pct
         
-        # Parse CSV Data
-        self.asset_names = []
-        self.categories = []
-        self.amounts = []
-        self.mu_assets = []
-        self.vol_assets = []
-        
-        reader = csv.DictReader(io.StringIO(csv_data.strip()))
-        for row in reader:
-            self.asset_names.append(row['Investment Type'].strip())
-            self.categories.append(row['Category'].strip().title())
-            self.amounts.append(float(row['Amount']))
-            self.mu_assets.append(float(row['Mean Return']))
-            self.vol_assets.append(float(row['Volatility']))
+        # Load directly from Pandas DataFrame
+        self.asset_names = df_data['Investment Type'].astype(str).tolist()
+        self.categories = df_data['Category'].astype(str).str.title().values
+        self.amounts = df_data['Amount'].astype(float).values
+        self.mu_assets = df_data['Mean Return'].astype(float).values
+        self.vol_assets = df_data['Volatility'].astype(float).values
             
         self.n_assets = len(self.asset_names)
-        self.categories = np.array(self.categories)
-        self.amounts = np.array(self.amounts)
-        self.mu_assets = np.array(self.mu_assets)
-        self.vol_assets = np.array(self.vol_assets)
         
         # Map Category Indices
         self.eq_idx = np.where(self.categories == 'Equity')[0]
@@ -174,18 +160,30 @@ years = st.sidebar.slider("Retirement Horizon (Years)", 10, 60, 40)
 equity_shift_pct = st.sidebar.slider("Annual Debt-to-Equity Shift (%)", 0.0, 5.0, 1.0, 0.1) / 100.0
 
 # Main Area Inputs
-st.subheader("Portfolio Configuration (CSV Format)")
-default_csv = """Investment Type,Category,Amount,Mean Return,Volatility
-Domestic Equity,Equity,35000000,0.12,0.20
-International Equity,Equity,15000000,0.14,0.22
-Long Term Bonds,Debt,15000000,0.07,0.02
-Liquid Funds,Cash,5000000,0.04,0.01"""
+st.subheader("Portfolio Configuration")
 
-csv_input = st.text_area("Edit your assets below:", value=default_csv, height=150)
+# Initialize default data as a pandas DataFrame
+default_data = pd.DataFrame({
+    "Investment Type": ["Domestic Equity", "International Equity", "Long Term Bonds", "Liquid Funds"],
+    "Category": ["Equity", "Equity", "Debt", "Cash"],
+    "Amount": [35000000.0, 15000000.0, 15000000.0, 5000000.0],
+    "Mean Return": [0.12, 0.14, 0.07, 0.04],
+    "Volatility": [0.20, 0.22, 0.02, 0.01]
+})
+
+# Display the interactive data editor
+# num_rows="dynamic" allows the user to add and delete rows freely
+edited_df = st.data_editor(
+    default_data, 
+    num_rows="dynamic",
+    use_container_width=True,
+    hide_index=True
+)
 
 if st.button("Run Monte Carlo Simulation", type="primary"):
     with st.spinner('Running quantitative paths...'):
-        sim = DynamicHUGSSimulation(csv_input, n_sims=n_sims, years=years, equity_shift_pct=equity_shift_pct)
+        # Pass the edited DataFrame directly to the simulation class
+        sim = DynamicHUGSSimulation(edited_df, n_sims=n_sims, years=years, equity_shift_pct=equity_shift_pct)
         results = sim.run()
         
         # Display Metrics
