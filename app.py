@@ -17,11 +17,9 @@ class DynamicHUGSSimulation:
         self.years = years
         self.shift_pct = equity_shift_pct
         
-        # Load directly from Pandas DataFrame
         self.asset_names = df_data['Investment Type'].astype(str).tolist()
         self.categories = df_data['Category'].astype(str).str.title().values
         
-        # Convert Crores input to absolute values
         amount_col = 'Amount (Crores)' if 'Amount (Crores)' in df_data.columns else 'Amount'
         self.amounts = df_data[amount_col].astype(float).values * 10_000_000
         
@@ -30,30 +28,25 @@ class DynamicHUGSSimulation:
             
         self.n_assets = len(self.asset_names)
         
-        # Map Category Indices
         self.eq_idx = np.where(self.categories == 'Equity')[0]
         self.debt_idx = np.where(self.categories == 'Debt')[0]
         self.cash_idx = np.where(self.categories == 'Cash')[0]
         
         self.initial_corpus = np.sum(self.amounts)
         
-        # Expenses (Absolute values)
         self.start_essential = start_essential
         self.start_discretionary = start_discretionary
         self.start_travel = start_travel
         
-        # Macroeconomic Inflation Assumptions
         self.mu_inf_ess, self.vol_inf_ess = mu_inf_ess, vol_inf_ess
         self.mu_inf_disc, self.vol_inf_disc = mu_inf_disc, vol_inf_disc
         self.mu_inf_trv, self.vol_inf_trv = mu_inf_trv, vol_inf_trv
 
-        # Track history for plotting
         self.real_corpus_history = np.zeros((self.years, self.n_sims))
 
     def run(self):
         np.random.seed(42)
         
-        # Pre-generate Market Returns & Inflation
         ret_assets = np.zeros((self.years, self.n_sims, self.n_assets))
         for i in range(self.n_assets):
             ret_assets[:, :, i] = np.random.normal(self.mu_assets[i], self.vol_assets[i], (self.years, self.n_sims))
@@ -160,19 +153,16 @@ class DynamicHUGSSimulation:
 st.title("HUGS Retirement Simulator")
 st.markdown("Dynamic Guardrails • Cascading Withdrawals (Cash → Debt → Equity) • Glidepaths")
 
-# Sidebar Configuration
 st.sidebar.header("Simulation Settings")
 n_sims = st.sidebar.number_input("Number of Simulations", min_value=100, max_value=20000, value=5000, step=500)
 years = st.sidebar.slider("Retirement Horizon (Years)", 10, 60, 40)
 equity_shift_pct = st.sidebar.slider("Annual Debt-to-Equity Shift (%)", 0.0, 5.0, 1.0, 0.1) / 100.0
 
-# Expenses Inputs
 with st.sidebar.expander("Initial Expenses (Lakhs ₹)", expanded=True):
     ess_lakhs = st.number_input("Essential Lifestyle", value=18.0, step=0.5)
     disc_lakhs = st.number_input("Discretionary Lifestyle", value=6.0, step=0.5)
     trv_lakhs = st.number_input("Travel", value=6.0, step=0.5)
 
-# Inflation Inputs
 with st.sidebar.expander("Inflation Assumptions (%)", expanded=False):
     st.markdown("**Essential**")
     mu_inf_ess = st.number_input("Mean (Ess)", value=6.0, step=0.5) / 100.0
@@ -186,10 +176,8 @@ with st.sidebar.expander("Inflation Assumptions (%)", expanded=False):
     mu_inf_trv = st.number_input("Mean (Trv)", value=5.0, step=0.5) / 100.0
     vol_inf_trv = st.number_input("Volatility (Trv)", value=1.0, step=0.1) / 100.0
 
-# Main Area Inputs
 st.subheader("Portfolio Configuration")
 
-# Initialize default data in Crores
 default_data = pd.DataFrame({
     "Investment Type": ["Domestic Equity", "International Equity", "Long Term Bonds", "Liquid Funds"],
     "Category": ["Equity", "Equity", "Debt", "Cash"],
@@ -238,45 +226,45 @@ if st.button("Run Monte Carlo Simulation", type="primary"):
         history_cr = results['history'] / 10_000_000
         x_years = np.arange(1, years + 1)
         
-        # Calculate percentiles across ALL simulated paths (accurate representation)
+        # Calculate percentiles across ALL simulated paths
         median_path = np.median(history_cr, axis=1)
         p10_path = np.percentile(history_cr, 10, axis=1)
+        p75_path = np.percentile(history_cr, 75, axis=1)
         p90_path = np.percentile(history_cr, 90, axis=1)
         
         fig = go.Figure()
 
-        # ==========================================
-        # 1. ADD BACKGROUND PATHS
-        # ==========================================
-        # Sample a maximum of 250 paths so the browser doesn't crash
-        n_paths_to_plot = min(250, n_sims)
-        sampled_indices = np.random.choice(n_sims, n_paths_to_plot, replace=False)
+        # 1. Identify and plot all paths in the bottom 10%
+        terminal_values = history_cr[-1, :]
+        p10_terminal = np.percentile(terminal_values, 10)
+        bottom_10_idx = np.where(terminal_values <= p10_terminal)[0]
 
-        for idx in sampled_indices:
-            # We use Scattergl for high-performance WebGL rendering
+        for idx in bottom_10_idx:
             fig.add_trace(go.Scattergl(
                 x=x_years, 
                 y=history_cr[:, idx], 
                 mode='lines',
-                line=dict(color='rgba(150, 150, 150, 0.08)', width=1), # Highly transparent gray
+                line=dict(color='rgba(231, 76, 60, 0.05)', width=1), 
                 showlegend=False,
-                hoverinfo='skip' # Do not freeze UI on hover
+                hoverinfo='skip'
             ))
             
-        # ==========================================
-        # 2. ADD HIGHLIGHTED PERCENTILES OVER TOP
-        # ==========================================
+        # 2. Overlay specific percentile benchmarks
         fig.add_trace(go.Scattergl(x=x_years, y=p90_path, mode='lines', 
-                                 line=dict(color='rgba(46, 204, 113, 1)', width=3, dash='dash'),
+                                 line=dict(color='rgba(46, 204, 113, 1)', width=2, dash='dash'),
                                  name='90th Percentile (Prosperity)'))
         
+        fig.add_trace(go.Scattergl(x=x_years, y=p75_path, mode='lines', 
+                                 line=dict(color='rgba(241, 196, 15, 1)', width=2, dash='dashdot'),
+                                 name='75th Percentile (Comfort)'))
+
         fig.add_trace(go.Scattergl(x=x_years, y=median_path, mode='lines', 
                                  line=dict(color='rgba(52, 152, 219, 1)', width=4),
                                  name='Median Path'))
         
         fig.add_trace(go.Scattergl(x=x_years, y=p10_path, mode='lines', 
-                                 line=dict(color='rgba(231, 76, 60, 1)', width=3, dash='dash'),
-                                 name='10th Percentile (Stress Test)'))
+                                 line=dict(color='rgba(231, 76, 60, 1)', width=3, dash='solid'),
+                                 name='10th Percentile (Stress Boundary)'))
         
         fig.update_layout(
             xaxis_title="Years in Retirement",
@@ -287,5 +275,3 @@ if st.button("Run Monte Carlo Simulation", type="primary"):
         )
         
         st.plotly_chart(fig, use_container_width=True)
-
-        st.caption("Note: Rendering is optimized by plotting a random 250-path subset in the background. Percentiles are calculated accurately across all simulations.")
