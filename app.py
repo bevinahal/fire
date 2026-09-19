@@ -193,7 +193,7 @@ st.subheader("Portfolio Configuration")
 default_data = pd.DataFrame({
     "Investment Type": ["Domestic Equity", "International Equity", "Long Term Bonds", "Liquid Funds"],
     "Category": ["Equity", "Equity", "Debt", "Cash"],
-    "Amount (Crores)": [3.81, 3.47, 6.98, 3.0],
+    "Amount (Crores)": [3.5, 1.5, 1.5, 0.5],
     "Mean Return": [0.12, 0.14, 0.07, 0.04],
     "Volatility": [0.20, 0.22, 0.02, 0.01]
 })
@@ -208,7 +208,6 @@ edited_df = st.data_editor(
 if st.button("Run Monte Carlo Simulation", type="primary"):
     with st.spinner('Running quantitative paths...'):
         
-        # Convert inputs to class parameters
         sim = DynamicHUGSSimulation(
             df_data=edited_df, 
             n_sims=n_sims, 
@@ -239,20 +238,44 @@ if st.button("Run Monte Carlo Simulation", type="primary"):
         history_cr = results['history'] / 10_000_000
         x_years = np.arange(1, years + 1)
         
+        # Calculate percentiles across ALL simulated paths (accurate representation)
         median_path = np.median(history_cr, axis=1)
         p10_path = np.percentile(history_cr, 10, axis=1)
         p90_path = np.percentile(history_cr, 90, axis=1)
         
         fig = go.Figure()
-        
-        fig.add_trace(go.Scatter(x=x_years, y=p90_path, mode='lines', 
-                                 line=dict(color='rgba(46, 204, 113, 0.5)', width=1, dash='dash'),
+
+        # ==========================================
+        # 1. ADD BACKGROUND PATHS
+        # ==========================================
+        # Sample a maximum of 250 paths so the browser doesn't crash
+        n_paths_to_plot = min(250, n_sims)
+        sampled_indices = np.random.choice(n_sims, n_paths_to_plot, replace=False)
+
+        for idx in sampled_indices:
+            # We use Scattergl for high-performance WebGL rendering
+            fig.add_trace(go.Scattergl(
+                x=x_years, 
+                y=history_cr[:, idx], 
+                mode='lines',
+                line=dict(color='rgba(150, 150, 150, 0.08)', width=1), # Highly transparent gray
+                showlegend=False,
+                hoverinfo='skip' # Do not freeze UI on hover
+            ))
+            
+        # ==========================================
+        # 2. ADD HIGHLIGHTED PERCENTILES OVER TOP
+        # ==========================================
+        fig.add_trace(go.Scattergl(x=x_years, y=p90_path, mode='lines', 
+                                 line=dict(color='rgba(46, 204, 113, 1)', width=3, dash='dash'),
                                  name='90th Percentile (Prosperity)'))
-        fig.add_trace(go.Scatter(x=x_years, y=median_path, mode='lines', 
-                                 line=dict(color='rgba(52, 152, 219, 1)', width=3),
+        
+        fig.add_trace(go.Scattergl(x=x_years, y=median_path, mode='lines', 
+                                 line=dict(color='rgba(52, 152, 219, 1)', width=4),
                                  name='Median Path'))
-        fig.add_trace(go.Scatter(x=x_years, y=p10_path, mode='lines', 
-                                 line=dict(color='rgba(231, 76, 60, 0.5)', width=1, dash='dash'),
+        
+        fig.add_trace(go.Scattergl(x=x_years, y=p10_path, mode='lines', 
+                                 line=dict(color='rgba(231, 76, 60, 1)', width=3, dash='dash'),
                                  name='10th Percentile (Stress Test)'))
         
         fig.update_layout(
@@ -265,4 +288,4 @@ if st.button("Run Monte Carlo Simulation", type="primary"):
         
         st.plotly_chart(fig, use_container_width=True)
 
-        st.caption("Note: Real Portfolio Value is discounted for macroeconomic inflation. Paths hitting zero represent portfolio depletion.")
+        st.caption("Note: Rendering is optimized by plotting a random 250-path subset in the background. Percentiles are calculated accurately across all simulations.")
