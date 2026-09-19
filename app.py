@@ -15,7 +15,11 @@ class DynamicHUGSSimulation:
         # Load directly from Pandas DataFrame
         self.asset_names = df_data['Investment Type'].astype(str).tolist()
         self.categories = df_data['Category'].astype(str).str.title().values
-        self.amounts = df_data['Amount'].astype(float).values
+        
+        # Convert Crores input to absolute values
+        amount_col = 'Amount (Crores)' if 'Amount (Crores)' in df_data.columns else 'Amount'
+        self.amounts = df_data[amount_col].astype(float).values * 10_000_000
+        
         self.mu_assets = df_data['Mean Return'].astype(float).values
         self.vol_assets = df_data['Volatility'].astype(float).values
             
@@ -28,7 +32,7 @@ class DynamicHUGSSimulation:
         
         self.initial_corpus = np.sum(self.amounts)
         
-        # Starting Expenses
+        # Starting Expenses (Absolute values)
         self.start_essential = 1_800_000
         self.start_discretionary = 600_000
         self.start_travel = 600_000
@@ -162,17 +166,15 @@ equity_shift_pct = st.sidebar.slider("Annual Debt-to-Equity Shift (%)", 0.0, 5.0
 # Main Area Inputs
 st.subheader("Portfolio Configuration")
 
-# Initialize default data as a pandas DataFrame
+# Initialize default data in Crores
 default_data = pd.DataFrame({
     "Investment Type": ["Domestic Equity", "International Equity", "Long Term Bonds", "Liquid Funds"],
     "Category": ["Equity", "Equity", "Debt", "Cash"],
-    "Amount": [35000000.0, 15000000.0, 15000000.0, 5000000.0],
+    "Amount (Crores)": [3.5, 1.5, 1.5, 0.5],
     "Mean Return": [0.12, 0.14, 0.07, 0.04],
     "Volatility": [0.20, 0.22, 0.02, 0.01]
 })
 
-# Display the interactive data editor
-# num_rows="dynamic" allows the user to add and delete rows freely
 edited_df = st.data_editor(
     default_data, 
     num_rows="dynamic",
@@ -182,48 +184,45 @@ edited_df = st.data_editor(
 
 if st.button("Run Monte Carlo Simulation", type="primary"):
     with st.spinner('Running quantitative paths...'):
-        # Pass the edited DataFrame directly to the simulation class
         sim = DynamicHUGSSimulation(edited_df, n_sims=n_sims, years=years, equity_shift_pct=equity_shift_pct)
         results = sim.run()
         
-        # Display Metrics
         st.divider()
         st.subheader("Simulation Outcomes")
         
+        # Convert terminal corpus back to Crores for clean display
+        terminal_cr = results['med_terminal_corpus_real'] / 10_000_000
+        
         col1, col2, col3 = st.columns(3)
         col1.metric("Portfolio Survival Rate", f"{results['survival_rate'] * 100:.1f}%")
-        col2.metric("Median Terminal Corpus (Real)", f"₹{results['med_terminal_corpus_real']:,.0f}")
+        col2.metric("Median Terminal Corpus (Real)", f"₹{terminal_cr:,.2f} Cr")
         col3.metric("Avg Years in Danger Zone", f"{results['avg_danger_years']:.1f}")
         
-        # Interactive Plotly Chart
         st.subheader("Real Portfolio Trajectories (Inflation-Adjusted)")
         
-        history = results['history']
+        # Scale the history arrays down to Crores for the Y-axis
+        history_cr = results['history'] / 10_000_000
         x_years = np.arange(1, years + 1)
         
-        # Calculate percentiles across all paths for each year
-        median_path = np.median(history, axis=1)
-        p10_path = np.percentile(history, 10, axis=1)
-        p90_path = np.percentile(history, 90, axis=1)
+        median_path = np.median(history_cr, axis=1)
+        p10_path = np.percentile(history_cr, 10, axis=1)
+        p90_path = np.percentile(history_cr, 90, axis=1)
         
         fig = go.Figure()
         
-        # Add 90th Percentile
         fig.add_trace(go.Scatter(x=x_years, y=p90_path, mode='lines', 
                                  line=dict(color='rgba(46, 204, 113, 0.5)', width=1, dash='dash'),
                                  name='90th Percentile (Prosperity)'))
-        # Add Median
         fig.add_trace(go.Scatter(x=x_years, y=median_path, mode='lines', 
                                  line=dict(color='rgba(52, 152, 219, 1)', width=3),
                                  name='Median Path'))
-        # Add 10th Percentile
         fig.add_trace(go.Scatter(x=x_years, y=p10_path, mode='lines', 
                                  line=dict(color='rgba(231, 76, 60, 0.5)', width=1, dash='dash'),
                                  name='10th Percentile (Stress Test)'))
         
         fig.update_layout(
             xaxis_title="Years in Retirement",
-            yaxis_title="Real Portfolio Value (₹)",
+            yaxis_title="Real Portfolio Value (Crores ₹)",
             hovermode="x unified",
             template="plotly_dark",
             legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
