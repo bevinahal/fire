@@ -193,7 +193,7 @@ st.subheader("Portfolio Configuration")
 default_data = pd.DataFrame({
     "Investment Type": ["Domestic Equity", "International Equity", "Long Term Bonds", "Liquid Funds"],
     "Category": ["Equity", "Equity", "Debt", "Cash"],
-    "Amount (Crores)": [3.5, 1.5, 1.5, 0.5],
+    "Amount (Crores)": [3.81, 3.47, 6.98, 3.0],
     "Mean Return": [0.12, 0.14, 0.07, 0.04],
     "Volatility": [0.20, 0.22, 0.02, 0.01]
 })
